@@ -258,7 +258,7 @@ def remove_paddings_and_resizes(paths, image_size, margin=5):
     """
     images = []
     error_indices = []
-    for ind, path in tqdm(enumerate(paths)):
+    for ind, path in enumerate(paths):
         try:
             image = remove_noise(path, margin)
             image = image.astype('uint8')

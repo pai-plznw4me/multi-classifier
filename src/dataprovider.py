@@ -1,10 +1,8 @@
 import shutil
-
 import numpy as np
 import os
 import pandas as pd
-from utils import get_all_paths, filter_img_paths, get_names, fill_df, save_np, paths2np, fill_np, plot_images
-from preprocessing import remove_paddings_and_resizes
+from utils import get_all_paths, filter_img_paths, get_names, paths2np, plot_images, paths2imgs
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
@@ -100,7 +98,7 @@ class Dataprovider(Sequence):
         :return:
         """
         n_steps = np.floor(len(self.merged_df) / self.batch_size).astype(np.int)
-        print('1 Epoch : {}'.format(n_steps))
+        print('Epoch per steps : {}'.format(n_steps))
         return n_steps
 
     def __getitem__(self, idx):
@@ -110,66 +108,12 @@ class Dataprovider(Sequence):
 
         # 배치 단위로 입력 파일 경로를 가져옵니다. example) [a/a.jpeg, a/b.jpeg]
         batch_df = self.merged_df[slice_]
+        batch_paths = batch_df.path.to_list()
+        batch_xs = np.stack(paths2imgs(batch_paths), axis=0)
 
         # 배치 단위로 출력 라벨 정보를 가져옵니다. example) [0, 1]
         batch_ys = np.array(batch_df.label)
-
-        # preproc 에서 None 대신 preprocessing 된 경로가 모두 들어있으면 아래 코드가 수행 됩니다.
-        if not batch_df.preproc.isna().all():
-            batch_xs = paths2np(batch_df.preproc)
-
-            # batch 사이즈 보다 개 수가 작으면 batch_xs[0] 데이터를 복사해 batch_xs 에 추가합니다.
-            batch_xs = fill_np(self.batch_size - len(batch_ys), batch_xs)
-            batch_ys = fill_np(self.batch_size - len(batch_ys), batch_ys)
-
-        # preproc column 에서 None 이 하나라도 들어 있으면 아래 코드가 수행 됩니다.
-        else:
-            batch_paths = batch_df.path
-
-            # 이미지를 299x299x3 형태로 출력합니다. (※ side padding  을 제거하고 isometrically resize 합니다.)
-            # 이미지 전처리시 문제가 생기면 에러가 발생된 인덱스를 error_ind 에 담아 반환합니다.
-            batch_xs, error_ind = remove_paddings_and_resizes(batch_paths, 299)
-
-            if error_ind:
-                # error_ind 에 해당하는 부분을 batch_ys 에서 제거 합니다.
-                batch_ys = pd.Series(batch_ys).drop(error_ind)
-
-                # batch df 에서 에러가 난 row 을 제거 합니다.
-                batch_df.drop(batch_df.iloc[error_ind].index, inplace=True)
-
-                # error_ind 개 수 만큼 batch_xs[0] 데이터를 복사해 batch_xs 에 추가합니다.
-                batch_xs = fill_np(len(error_ind), batch_xs)
-                batch_ys = fill_df(len(error_ind), batch_ys)
-                batch_df = fill_df(len(error_ind), batch_df)
-
-                # 전체 데이터에서 에러가 난 데이터를 삭제합니다. 그리고 삭제한 데이터 로그를 저장합니다.
-                batch_error_paths = batch_paths.iloc[error_ind]
-                batch_error_index = batch_error_paths.index
-                self.merged_df.drop(batch_error_index, inplace=True)
-
-                # 에러가 난 파일 경로를 저장합니다.
-                f = open(self.error_data_path, 'a')
-                for batch_error_path in batch_error_paths:
-                    f.write(batch_error_path + '\n')
-                f.close()
-
-            batch_xs = batch_xs.astype(float)
-            # backbone에 따른 input data preprocess 진행
-            if self.preprocess_input:
-                batch_xs = self.preprocess_input(batch_xs)
-
-            # input data std 진행
-            if self.std:
-                batch_xs = self.standardize(batch_xs)
-
-            # preprocessing 이 된 numpy 파일을 저장합니다.
-            names = get_names(batch_df.path, ext=False)
-            dst_paths = [os.path.join(self.save_dir, name) + '.npy' for name in names]
-            save_np(dst_paths, batch_xs)
-
-            # preprocessing 된 이미지 경롤를 저장합니다.
-            self.merged_df.loc[batch_df.index, 'preproc'] = dst_paths
-            batch_ys = to_categorical(batch_ys, self.n_classes)
+        batch_ys = to_categorical(batch_ys, self.n_classes)
 
         return batch_xs, batch_ys
 
@@ -255,12 +199,10 @@ class Dataprovider(Sequence):
 if __name__ == '__main__':
     input_dir = '../datasets/sanitizer_dough_256'
     label_path = '../datasets/sanitizer_dough.csv'  # '../datasets'
-    batch_size = 3
+    batch_size = 60
     preprocess_input = None
-    n_classes = 4
+    n_classes = 2
     td = Dataprovider(input_dir, label_path, batch_size, preprocess_input, n_classes)
-    x_train, x_test, y_train, y_test = td.split_datasets(0.25)
-
     paths = td.merged_df.path
     xs, ys = td[1]
     plot_images(xs)

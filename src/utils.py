@@ -96,7 +96,7 @@ def paths2imgs(paths, resize=None, error=None):
     """
     imgs = []
     error_paths = []
-    for path in tqdm(paths):
+    for path in paths:
         try:
             img = path2img(path, resize)
             imgs.append(img)
@@ -263,7 +263,7 @@ def save_np(dst_paths, src_nps):
     :param src_imgs: ndarray
     :return:
     """
-    for path, src_np in tqdm(zip(dst_paths, src_nps)):
+    for path, src_np in zip(dst_paths, src_nps):
         np.save(path, src_np)
 
 
