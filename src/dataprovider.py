@@ -1,3 +1,5 @@
+import shutil
+
 import numpy as np
 import os
 import pandas as pd
@@ -5,6 +7,7 @@ from utils import get_all_paths, filter_img_paths, get_names, fill_df, save_np, 
 from preprocessing import remove_paddings_and_resizes
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
 
 
 class Dataprovider(Sequence):
@@ -182,6 +185,22 @@ class Dataprovider(Sequence):
         if self.shuffle:
             self.merged_df = self.merged_df.sample(frac=1).reset_index(drop=True)
 
+    def split_datasets(self, test_size):
+        X_train, X_test, y_train, y_test = train_test_split(self.merged_df,
+                                                            self.merged_df.label,
+                                                            test_size=test_size, stratify=self.merged_df.label)
+        return X_train, X_test
+
+    def copy_datasets(self, save_dir, save_df):
+        os.makedirs(save_dir, exist_ok=True)
+
+        src_paths = save_df.path
+        names = get_names(src_paths)
+        dst_paths = list(map(lambda x: os.path.join(save_dir, x), names))
+
+        for src_path, dst_path in zip(src_paths, dst_paths):
+            shutil.copy(src_path, dst_path)
+
     def data_sync(self):
         """
         Description:
@@ -201,14 +220,47 @@ class Dataprovider(Sequence):
         unmasked_df = self.merged_df.loc[~mask]
         return masked_df, unmasked_df, mask
 
+    def over_sampling(self):
+        """
+        Description:
+            가장 많은 class code 를 가지고 있는 데이터 셋에 맞게 모든 항목들을 그 숫자에 맞게 복사합니다.
+            inplace 형태로 변환합니다.
+        Returns:
+        """
+        counts = self.merged_df.label.value_counts().values
+        class_codes = self.merged_df.label.value_counts().index
+        max_count = max(counts)
+        print('가장 개 수:{} '.format(max_count))
+
+        add_df_bucket = []
+        add_df_bucket.append(self.merged_df)
+        # 가장 개 수가 많은 class code 의 샘플 만큼 모든 class code 의 데이터를 램덤하게 추출해 추가합니다.
+        for class_code, count in zip(class_codes, counts):
+            # 추가할 데이터 개 수
+            n_oversample = max_count - count
+
+            # target class code 의 DataFrame 추출
+            mask = self.merged_df.label.map(lambda x: int(x) == int(class_code))
+            trgt_df = self.merged_df.loc[mask]
+
+            # oversample 개 수 만큼 random 으로 추출
+            rand_indices = np.random.choice(trgt_df.index.values, n_oversample)
+            add_df = trgt_df.loc[rand_indices]
+            add_df_bucket.append(add_df)
+
+        # oversample 된 dataframe 을 기존 anno df 로 치환
+        self.merged_df = pd.concat(add_df_bucket)
+
 
 if __name__ == '__main__':
-    input_dir = '../datasets/resize_and_pad_256x256'
-    label_path = '../datasets/trainLabels.csv'  # '../datasets'
+    input_dir = '../datasets/sanitizer_dough_256'
+    label_path = '../datasets/sanitizer_dough.csv'  # '../datasets'
     batch_size = 3
     preprocess_input = None
     n_classes = 4
     td = Dataprovider(input_dir, label_path, batch_size, preprocess_input, n_classes)
+    x_train, x_test, y_train, y_test = td.split_datasets(0.25)
+
     paths = td.merged_df.path
     xs, ys = td[1]
     plot_images(xs)
